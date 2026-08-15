@@ -15,8 +15,8 @@ desktop app into a dedicated, touch-first instrument on your desk.
 
 | Product | Purpose | Platforms | Repository |
 |---|---|---|---|
-| **NotchAgent** | Native software gauge in the computer UI | macOS stable · Windows preview | [`notchagent`](https://github.com/luisroquette/notchagent) |
-| **NotchAgent Desk** | Physical ESP32-S3 touch display over USB | macOS stable · Windows beta | **this repository** |
+| **NotchAgent** | Native software gauge in the computer UI | macOS release · Windows preview | [`notchagent`](https://github.com/luisroquette/notchagent) |
+| **NotchAgent Desk** | Physical ESP32-S3 touch display over USB | macOS Beta 1 · Windows beta | **this repository** |
 
 ## How it works
 
@@ -36,10 +36,11 @@ sanitized snapshot.
 
 ## Current compatibility
 
-- **macOS 14+ / Apple Silicon:** stable host path, signed and notarized app.
+- **macOS 14+ / Apple Silicon:** Beta 1 hardware path through a signed and
+  notarized host app; the 24-hour physical soak and customer pilot remain open.
 - **Windows 10/11 x64:** beta host path; protocol builds on Windows CI, physical
   USB/DPI/tray validation remains a release gate.
-- **Firmware:** `0.6.16` on Guition `JC3248W535C_I` / ESP32-S3.
+- **Firmware:** `0.6.16` on Guition `JC4832W535` / ESP32-S3.
 - **Wire protocol:** `1.1`; major versions must match.
 
 See [`COMPATIBILITY.md`](COMPATIBILITY.md) before claiming a platform as supported.

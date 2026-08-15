@@ -8,7 +8,13 @@ Status definitions:
 
 | Desk | Firmware | Protocol | Host app | macOS | Windows | Hardware |
 |---|---:|---:|---:|---|---|---|
-| Beta 1 | 0.6.16 | 1.1 | NotchAgent 3.1.2+ | Stable | Beta | JC3248W535C_I rev A |
+| Beta 1 | 0.6.16 | 1.1 | NotchAgent 3.1.2+ | Beta | Beta | JC4832W535 rev A |
+
+## macOS promotion gate
+
+The signed and notarized macOS host path is implemented and 100/100 physical
+reset/reconnect cycles passed on firmware 0.6.16. The Desk remains Beta until
+the current 24-hour soak, touch/power checks, and five-user pilot are complete.
 
 ## Windows promotion gate
 
@@ -22,4 +28,3 @@ Windows remains Beta until all checks pass on Windows 10 and Windows 11:
 
 Marketing and release notes must display `Windows beta` until this file records
 the evidence that promotes it to Stable.
-

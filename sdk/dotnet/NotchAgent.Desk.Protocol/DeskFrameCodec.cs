@@ -157,7 +157,7 @@ public sealed class DeskFrameStreamDecoder
         {
             var packet = _buffer.GetRange(0, delimiter).ToArray();
             _buffer.RemoveRange(0, delimiter + 1);
-            if (packet.Length > 0) frames.Add(DecodePacket(packet));
+            if (packet.Length > 0) frames.Add(DeskFrameCodec.DecodePacket(packet));
         }
         return frames;
     }

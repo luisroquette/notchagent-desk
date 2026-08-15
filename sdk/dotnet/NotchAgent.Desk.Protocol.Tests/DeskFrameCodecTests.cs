@@ -1,5 +1,6 @@
 using System.Text;
 using NotchAgent.Desk.Protocol;
+using Xunit;
 
 namespace NotchAgent.Desk.Protocol.Tests;
 

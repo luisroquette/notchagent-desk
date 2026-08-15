@@ -35,6 +35,8 @@ jobs:
 
   firmware:
     runs-on: macos-15
+    env:
+      ARDUINO_DIRECTORIES_USER: ${{ runner.temp }}/notchagent-arduino
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: arduino/setup-arduino-cli@81d310742121c928ea9c8bbd407b4217b432ae02
@@ -46,6 +48,4 @@ jobs:
           arduino-cli core install esp32:esp32@3.3.8 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli lib install "ArduinoJson@7.2.0" "GFX Library for Arduino@1.6.5" "lvgl@9.2.2"
       - name: Build firmware
-        env:
-          ARDUINO_DIRECTORIES_USER: ${{ runner.temp }}/notchagent-arduino
         run: firmware/notchagent_desk/build.sh build

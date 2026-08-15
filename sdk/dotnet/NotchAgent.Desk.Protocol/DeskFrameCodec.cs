@@ -21,7 +21,7 @@ public enum DeskFrameType : byte
 
 public sealed record DeskFrame(DeskFrameType Type, uint Sequence, byte[] Payload);
 
-public sealed class DeskProtocolException(string message) : InvalidDataException(message);
+public sealed class DeskProtocolException(string message) : Exception(message);
 
 public static class DeskFrameCodec
 {

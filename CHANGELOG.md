@@ -12,6 +12,10 @@ All notable changes to NotchAgent Desk are documented here. The format follows
 - Apple and .NET protocol SDK packages.
 - Cross-platform compatibility and release contracts.
 
+### Fixed
+
+- Windows SDK exception compatibility and deterministic Arduino library path in CI.
+
 ## [0.6.16] - 2026-08-14
 
 ### Changed
@@ -26,4 +30,3 @@ All notable changes to NotchAgent Desk are documented here. The format follows
 
 [Unreleased]: https://github.com/luisroquette/notchagent-desk/compare/v0.6.16...HEAD
 [0.6.16]: https://github.com/luisroquette/notchagent-desk/releases/tag/v0.6.16
-

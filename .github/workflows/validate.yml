@@ -1,0 +1,51 @@
+name: Validate NotchAgent Desk
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Validate release and privacy contracts
+        run: ./tools/check-release-contract.sh
+
+  apple-protocol:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Test Swift protocol SDK
+        run: swift test --package-path sdk/apple
+
+  windows-protocol:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d
+        with:
+          dotnet-version: 8.0.x
+      - name: Test .NET protocol SDK
+        run: dotnet test sdk/dotnet/NotchAgent.Desk.Protocol.Tests/NotchAgent.Desk.Protocol.Tests.csproj --configuration Release
+
+  firmware:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: arduino/setup-arduino-cli@81d310742121c928ea9c8bbd407b4217b432ae02
+        with:
+          version: 1.5.1
+      - name: Install pinned ESP32 toolchain
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32@3.3.8 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install "ArduinoJson@7.2.0" "GFX Library for Arduino@1.6.5" "lvgl@9.2.2"
+      - name: Build firmware
+        env:
+          ARDUINO_DIRECTORIES_USER: ${{ runner.temp }}/notchagent-arduino
+        run: firmware/notchagent_desk/build.sh build

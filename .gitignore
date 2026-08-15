@@ -1,0 +1,9 @@
+.DS_Store
+.build/
+bin/
+obj/
+firmware/build/
+firmware/release/
+*.user
+*.suo
+

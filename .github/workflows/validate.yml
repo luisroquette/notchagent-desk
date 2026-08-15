@@ -35,10 +35,10 @@ jobs:
 
   firmware:
     runs-on: macos-15
-    env:
-      ARDUINO_DIRECTORIES_USER: ${{ runner.temp }}/notchagent-arduino
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Isolate Arduino libraries
+        run: echo "ARDUINO_DIRECTORIES_USER=$RUNNER_TEMP/notchagent-arduino" >> "$GITHUB_ENV"
       - uses: arduino/setup-arduino-cli@81d310742121c928ea9c8bbd407b4217b432ae02
         with:
           version: 1.5.1

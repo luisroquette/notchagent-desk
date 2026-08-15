@@ -1,5 +1,10 @@
 # NotchAgent Desk Beta 1 pilot
 
+> Migration note: the `Scripts/` commands referenced below currently remain in
+> the [NotchAgent host repository](https://github.com/luisroquette/notchagent/tree/master/Scripts)
+> while shared app/hardware evidence is extracted. This repository owns the
+> pilot acceptance contract.
+
 ## Cohort
 
 Five participants for seven consecutive days, covering direct USB and at least

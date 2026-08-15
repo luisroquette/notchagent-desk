@@ -1,5 +1,10 @@
 # NotchAgent Desk Beta 1 BOM
 
+> Migration note: the `Scripts/` commands referenced below currently remain in
+> the [NotchAgent host repository](https://github.com/luisroquette/notchagent/tree/master/Scripts)
+> because they join hardware and signed-app release evidence. This repository
+> owns the BOM and product gates.
+
 This BOM separates verified engineering requirements from purchasing decisions
 that still require a supplier sample and owner approval.
 

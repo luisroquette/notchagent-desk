@@ -1,6 +1,7 @@
 # NotchAgent Desk Beta 1 onboarding
 
 1. Install the signed NotchAgent release on a Mac running macOS 14 or later.
+   Windows 10/11 is available as a beta and is not yet the default customer path.
 2. Connect NotchAgent Desk with any compatible USB **data** cable. A charge-only
    cable powers the screen but cannot connect the app.
 3. NotchAgent opens **Settings → Desk** automatically on the first connection.
@@ -43,9 +44,8 @@ separate explicit consent. Export **Safe diagnostic** when support needs device-
 the report excludes serial paths, account identifiers, credentials, amounts,
 and raw errors.
 
-Canonical onboarding and download entry point:
-<https://github.com/luisroquette/notchagent/blob/master/docs/NOTCHAGENT_DESK_ONBOARDING.md>
+Canonical customer onboarding:
+<https://cfgauss.com.br/notchagent/instalar>
 
-Do not print the production onboarding card until this exact URL is published
-and `NotchAgent-Desk-Beta1-3.1.1.zip` is available from the `v3.1.1` repository
-release with the same SHA-256 recorded by the notarization gate.
+Canonical compatibility contract:
+<https://github.com/luisroquette/notchagent-desk/blob/main/COMPATIBILITY.md>

@@ -1,7 +1,7 @@
 #pragma once
 
-#define DESK_FW_VERSION "0.6.16"
-#define DESK_PROTOCOL_MINOR 1
+#define DESK_FW_VERSION "0.7.0"
+#define DESK_PROTOCOL_MINOR 2
 #define DESK_SCREEN_WIDTH 480
 #define DESK_SCREEN_HEIGHT 320
 

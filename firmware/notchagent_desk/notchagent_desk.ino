@@ -588,7 +588,7 @@ void createUI() {
     lv_obj_set_style_text_align(burnLineLabels[i], LV_TEXT_ALIGN_RIGHT, 0);
     lv_obj_add_flag(burnLineLabels[i], LV_OBJ_FLAG_HIDDEN);
   }
-  burnEmptyLabel = label(burnCard, "LEARNING YOUR PACE", &lv_font_montserrat_16, kMuted, 14, 96);
+  burnEmptyLabel = label(burnCard, "NO MODEL DATA YET", &lv_font_montserrat_16, kMuted, 14, 96);
 
   lv_obj_t *rhythmTitle = label(pages[2], "RHYTHM  /  WHEN DO I WORK MOST?", &lv_font_montserrat_12, kCoral, 4, 5);
   styleTracking(rhythmTitle, 1);
@@ -967,8 +967,12 @@ void updateBurnLines() {
   const bool hasData = hasDominantModel && burnPointCount >= 2;
   lv_label_set_text(burnProvider, hasDominantModel ? dominantModelShortName : "--");
 
-  if (hasData) lv_obj_add_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
-  else lv_obj_remove_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+  if (hasData) {
+    lv_obj_add_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_label_set_text(burnEmptyLabel, hasDominantModel ? "LEARNING YOUR PACE" : "NO MODEL DATA YET");
+    lv_obj_remove_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+  }
 
   const int chartLeft = 14;
   const int chartRight = 450;
@@ -1011,6 +1015,7 @@ void updateBurnLines() {
     lv_obj_remove_flag(burnLines[series], LV_OBJ_FLAG_HIDDEN);
 
     int labelY = static_cast<int>(burnLinePoints[series][writtenCount - 1].y) - 6;
+    labelY = constrain(labelY, chartTop, chartBottom - 12);
     for (size_t p = 0; p < placedCount; ++p) {
       if (abs(labelY - placedLabelY[p]) < 12) labelY = placedLabelY[p] + 12;
     }

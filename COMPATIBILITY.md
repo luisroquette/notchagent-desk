@@ -9,6 +9,7 @@ Status definitions:
 | Desk | Firmware | Protocol | Host app | macOS | Windows | Hardware |
 |---|---:|---:|---:|---|---|---|
 | Beta 1 | 0.6.16 | 1.1 | NotchAgent 3.1.2+ | Beta | Beta | JC4832W535 rev A |
+| Beta 1 | 0.7.0 | 1.2 | NotchAgent 3.3.0+ | Beta | Beta | JC4832W535 rev A |
 
 ## macOS promotion gate
 

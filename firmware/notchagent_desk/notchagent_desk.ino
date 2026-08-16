@@ -18,6 +18,13 @@ constexpr uint32_t kMuted = 0x9E9EA6;
 constexpr uint32_t kOK = 0x7AC57F;
 constexpr uint32_t kWarning = 0xEFAA4E;
 constexpr uint32_t kDanger = 0xE5484D;
+// Copied verbatim from notchagent's Theme.swift (dark variant — this
+// device's background is fixed black). Not re-derived here; if the app's
+// validated palette changes, update these 4 to match.
+constexpr uint32_t kModelHaiku = 0x3987E5;
+constexpr uint32_t kModelSonnet = 0x199E70;
+constexpr uint32_t kModelOpus = 0x9085E9;
+constexpr uint32_t kModelFable = 0xD55181;
 constexpr uint64_t kResetBoundaryToleranceMs = 120000;
 constexpr int kPageCount = 4;
 
@@ -100,15 +107,11 @@ lv_obj_t *providerCaptions[2] = {};
 lv_obj_t *providerDetails[2] = {};
 lv_obj_t *providerStatuses[2] = {};
 lv_obj_t *providerGauge[2][10] = {};
-lv_obj_t *burnHero = nullptr;
-lv_obj_t *burnHeroCaption = nullptr;
 lv_obj_t *burnProvider = nullptr;
-lv_obj_t *burnVerdictPanel = nullptr;
-lv_obj_t *burnVerdict = nullptr;
-lv_obj_t *burnDetail = nullptr;
-lv_obj_t *burnStatus = nullptr;
-lv_obj_t *burnGauge[20] = {};
-lv_obj_t *burnMetricValues[3] = {};
+lv_obj_t *burnLines[4] = {};
+lv_obj_t *burnLineLabels[4] = {};
+lv_obj_t *burnEmptyLabel = nullptr;
+lv_point_precise_t burnLinePoints[4][48];
 lv_obj_t *rhythmBars[24] = {};
 lv_obj_t *rhythmMetricValues[3] = {};
 lv_obj_t *modelSummary = nullptr;
@@ -175,6 +178,14 @@ lv_obj_t *label(lv_obj_t *parent, const char *text, const lv_font_t *font,
 
 void styleTracking(lv_obj_t *object, int pixels = 1) {
   lv_obj_set_style_text_letter_space(object, pixels, 0);
+}
+
+uint32_t colorForModelShortName(const char *shortName) {
+  if (!strcmp(shortName, "Haiku")) return kModelHaiku;
+  if (!strcmp(shortName, "Sonnet")) return kModelSonnet;
+  if (!strcmp(shortName, "Opus")) return kModelOpus;
+  if (!strcmp(shortName, "Fable")) return kModelFable;
+  return kMuted;
 }
 
 lv_obj_t *surface(lv_obj_t *parent, int x, int y, int width, int height, int radius = 12) {
@@ -560,46 +571,24 @@ void createUI() {
   lv_obj_t *burnCard = surface(pages[1], 0, 0, 464, 224, 14);
   lv_obj_t *burnTitle = label(burnCard, "BURN FORECAST", &lv_font_montserrat_12, kCoral, 14, 10);
   styleTracking(burnTitle, 1);
-  lv_obj_t *burnQuestion = label(burnCard, "WILL I RUN OUT?", &lv_font_montserrat_12, kMuted, 146, 10);
+  lv_obj_t *burnQuestion = label(burnCard, "WHAT IF I SWITCHED MODELS?", &lv_font_montserrat_12, kMuted, 178, 10);
   styleTracking(burnQuestion, 1);
   burnProvider = label(burnCard, "--", &lv_font_montserrat_12, kCoral, 366, 10);
   lv_obj_set_width(burnProvider, 82);
   lv_obj_set_style_text_align(burnProvider, LV_TEXT_ALIGN_RIGHT, 0);
-  burnHero = label(burnCard, "--%", &lv_font_montserrat_40, kText, 14, 36);
-  burnHeroCaption = label(burnCard, "LIMIT LEFT", &lv_font_montserrat_12, kMuted, 128, 57);
-  styleTracking(burnHeroCaption, 2);
-  burnVerdictPanel = surface(burnCard, 216, 34, 232, 62, 8);
-  lv_obj_set_style_bg_color(burnVerdictPanel, lv_color_hex(kPanel), 0);
-  burnVerdict = label(burnVerdictPanel, "LEARNING YOUR PACE", &lv_font_montserrat_16, kMuted, 12, 8);
-  lv_obj_set_width(burnVerdict, 208);
-  burnStatus = label(burnVerdictPanel, "USE NOTCHAGENT FOR A FEW MINUTES.", &lv_font_montserrat_12, kMuted, 12, 33);
-  lv_obj_set_width(burnStatus, 208);
-  lv_obj_set_height(burnStatus, 28);
-  lv_label_set_long_mode(burnStatus, LV_LABEL_LONG_WRAP);
-  styleTracking(burnStatus, 1);
-  lv_obj_t *runwayLabel = label(burnCard, "AVAILABLE RUNWAY", &lv_font_montserrat_12, kMuted, 14, 101);
-  styleTracking(runwayLabel, 1);
-  for (int segment = 0; segment < 20; ++segment) {
-    burnGauge[segment] = lv_obj_create(burnCard);
-    lv_obj_set_pos(burnGauge[segment], 14 + segment * 22, 120);
-    lv_obj_set_size(burnGauge[segment], 17, 10);
-    lv_obj_set_style_bg_color(burnGauge[segment], lv_color_hex(kRaised), 0);
-    lv_obj_set_style_border_width(burnGauge[segment], 0, 0);
-    lv_obj_set_style_radius(burnGauge[segment], 2, 0);
+
+  for (int i = 0; i < 4; ++i) {
+    burnLines[i] = lv_line_create(burnCard);
+    lv_obj_remove_flag(burnLines[i], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_line_width(burnLines[i], i == 0 ? 3 : 2, 0);
+    lv_obj_set_style_line_rounded(burnLines[i], true, 0);
+    lv_obj_add_flag(burnLines[i], LV_OBJ_FLAG_HIDDEN);
+    burnLineLabels[i] = label(burnCard, "", &lv_font_montserrat_12, kMuted, 0, 0);
+    lv_obj_set_width(burnLineLabels[i], 60);
+    lv_obj_set_style_text_align(burnLineLabels[i], LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_add_flag(burnLineLabels[i], LV_OBJ_FLAG_HIDDEN);
   }
-  const char *metricCaptions[3] = {"WINDOW", "RESET", "PACE"};
-  const int metricX[3] = {14, 162, 310};
-  for (int metric = 0; metric < 3; ++metric) {
-    lv_obj_t *metricCard = surface(burnCard, metricX[metric], 142, metric == 2 ? 138 : 140, 48, 7);
-    lv_obj_set_style_bg_color(metricCard, lv_color_hex(kPanel), 0);
-    lv_obj_t *caption = label(metricCard, metricCaptions[metric], &lv_font_montserrat_12, kMuted, 10, 6);
-    styleTracking(caption, 1);
-    burnMetricValues[metric] = label(metricCard, "--", &lv_font_montserrat_16, kText, 10, 23);
-    lv_obj_set_width(burnMetricValues[metric], metric == 2 ? 118 : 120);
-  }
-  burnDetail = label(burnCard, "I'LL FORECAST RISK AS DATA ARRIVES.", &lv_font_montserrat_12, kMuted, 14, 202);
-  lv_obj_set_width(burnDetail, 434);
-  lv_label_set_long_mode(burnDetail, LV_LABEL_LONG_CLIP);
+  burnEmptyLabel = label(burnCard, "LEARNING YOUR PACE", &lv_font_montserrat_16, kMuted, 14, 96);
 
   lv_obj_t *rhythmTitle = label(pages[2], "RHYTHM  /  WHEN DO I WORK MOST?", &lv_font_montserrat_12, kCoral, 4, 5);
   styleTracking(rhythmTitle, 1);

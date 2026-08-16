@@ -6,4 +6,5 @@ firmware/build/
 firmware/release/
 *.user
 *.suo
+.superpowers/
 

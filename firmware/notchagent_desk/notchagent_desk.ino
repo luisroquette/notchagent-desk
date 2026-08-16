@@ -40,6 +40,11 @@ struct ModelState {
   int latency = -1;
 };
 
+struct BurnAlternateState {
+  char shortName[8] = "";
+  float priceRatio = 1.0f;
+};
+
 struct AlertTracker {
   char id[16] = "";
   char window[10] = "";
@@ -60,6 +65,10 @@ int64_t rhythm[24] = {};
 float burnAgeSeconds[48] = {};
 float burnUsedPercent[48] = {};
 size_t burnPointCount = 0;
+char dominantModelShortName[8] = "";
+bool hasDominantModel = false;
+BurnAlternateState burnAlternates[3];
+size_t burnAlternateCount = 0;
 size_t providerCount = 0;
 size_t modelCount = 0;
 uint8_t overallAttention = 0;
@@ -1196,6 +1205,8 @@ void clearData() {
   dismissDeskAlert();
   providerCount = modelCount = 0;
   burnPointCount = 0;
+  hasDominantModel = false;
+  burnAlternateCount = 0;
   memset(rhythm, 0, sizeof(rhythm));
   dataCleared = true;
   refreshUI();
@@ -1264,6 +1275,16 @@ bool parseSnapshot(const uint8_t *payload, size_t length) {
     burnAgeSeconds[burnPointCount] = max(0.0f, item["ageSeconds"].as<float>());
     burnUsedPercent[burnPointCount] = constrain(item["usedPercent"].as<float>(), 0.0f, 100.0f);
     ++burnPointCount;
+  }
+  hasDominantModel = document["dominantModelShortName"].is<const char *>();
+  strlcpy(dominantModelShortName, document["dominantModelShortName"] | "",
+          sizeof(dominantModelShortName));
+  burnAlternateCount = 0;
+  for (JsonObject item : document["modelAlternates"].as<JsonArray>()) {
+    if (burnAlternateCount >= 3) break;
+    BurnAlternateState &state = burnAlternates[burnAlternateCount++];
+    strlcpy(state.shortName, item["shortName"] | "", sizeof(state.shortName));
+    state.priceRatio = max(0.0f, item["priceRatio"].as<float>());
   }
   for (JsonObject item : document["rhythm"].as<JsonArray>()) {
     const int hour = item["hour"] | -1;

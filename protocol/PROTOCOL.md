@@ -1,4 +1,4 @@
-# NotchAgent Desk USB protocol 1.1
+# NotchAgent Desk USB protocol 1.2
 
 ## Transport
 

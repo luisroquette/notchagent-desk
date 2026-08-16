@@ -692,29 +692,6 @@ void compactTokens(int64_t tokens, char *output, size_t capacity) {
   else snprintf(output, capacity, "%" PRId64, tokens);
 }
 
-uint64_t estimatedEpochMs() {
-  if (!snapshotEpochMs || !lastSnapshotMs) return 0;
-  return snapshotEpochMs + static_cast<uint64_t>(millis() - lastSnapshotMs);
-}
-
-void formatCountdown(uint64_t targetEpochMs, char *output, size_t capacity) {
-  const uint64_t nowEpochMs = estimatedEpochMs();
-  if (!targetEpochMs || !nowEpochMs) {
-    strlcpy(output, "--", capacity);
-    return;
-  }
-  if (targetEpochMs <= nowEpochMs) {
-    strlcpy(output, "NOW", capacity);
-    return;
-  }
-  const uint64_t minutes = (targetEpochMs - nowEpochMs + 59999) / 60000;
-  if (minutes < 60) snprintf(output, capacity, "%" PRIu64 "M", minutes);
-  else if (minutes < 24 * 60)
-    snprintf(output, capacity, "%" PRIu64 "H %02" PRIu64 "M", minutes / 60, minutes % 60);
-  else
-    snprintf(output, capacity, "%" PRIu64 "D %02" PRIu64 "H", minutes / 1440, (minutes % 1440) / 60);
-}
-
 uint32_t alertColor(uint8_t threshold) {
   if (threshold <= 5) return kDanger;
   if (threshold <= 25) return kWarning;
@@ -986,6 +963,67 @@ void updateAlertAnimation() {
       lv_obj_set_x(alertMascotPixels[row][col], 28 + col * 10 + tremor);
 }
 
+void updateBurnLines() {
+  const bool hasData = hasDominantModel && burnPointCount >= 2;
+  lv_label_set_text(burnProvider, hasDominantModel ? dominantModelShortName : "--");
+
+  if (hasData) lv_obj_add_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+  else lv_obj_remove_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
+
+  const int chartLeft = 14;
+  const int chartRight = 450;
+  const int chartTop = 40;
+  const int chartBottom = 208;
+  const int chartWidth = chartRight - chartLeft;
+  const int chartHeight = chartBottom - chartTop;
+  const size_t seriesCount = hasData ? 1 + burnAlternateCount : 0;
+
+  int placedLabelY[4];
+  size_t placedCount = 0;
+
+  for (size_t series = 0; series < 4; ++series) {
+    if (series >= seriesCount) {
+      lv_obj_add_flag(burnLines[series], LV_OBJ_FLAG_HIDDEN);
+      lv_obj_add_flag(burnLineLabels[series], LV_OBJ_FLAG_HIDDEN);
+      continue;
+    }
+    const bool isDominant = series == 0;
+    const float ratio = isDominant ? 1.0f : burnAlternates[series - 1].priceRatio;
+    const char *seriesName = isDominant ? dominantModelShortName : burnAlternates[series - 1].shortName;
+    const uint32_t color = isDominant ? kCoral : colorForModelShortName(seriesName);
+
+    // Stop at the first point that reaches/exceeds 100% (clamped) instead of
+    // drawing a flat 100% tail for the rest of burnPointCount, matching the
+    // macOS app's BurnChartView.alternatePolyline behavior.
+    size_t writtenCount = 0;
+    for (size_t i = 0; i < burnPointCount; ++i) {
+      const float scaledPercent = burnUsedPercent[i] * ratio;
+      const float clampedPercent = constrain(scaledPercent, 0.0f, 100.0f);
+      const float x = chartLeft + chartWidth *
+        (burnPointCount > 1 ? static_cast<float>(i) / (burnPointCount - 1) : 1.0f);
+      const float y = chartTop + chartHeight * (1.0f - clampedPercent / 100.0f);
+      burnLinePoints[series][i] = {static_cast<lv_value_precise_t>(x), static_cast<lv_value_precise_t>(y)};
+      ++writtenCount;
+      if (scaledPercent >= 100.0f) break;
+    }
+    lv_line_set_points(burnLines[series], burnLinePoints[series], writtenCount);
+    lv_obj_set_style_line_color(burnLines[series], lv_color_hex(color), 0);
+    lv_obj_remove_flag(burnLines[series], LV_OBJ_FLAG_HIDDEN);
+
+    int labelY = static_cast<int>(burnLinePoints[series][writtenCount - 1].y) - 6;
+    for (size_t p = 0; p < placedCount; ++p) {
+      if (abs(labelY - placedLabelY[p]) < 12) labelY = placedLabelY[p] + 12;
+    }
+    labelY = constrain(labelY, chartTop, chartBottom - 12);
+    placedLabelY[placedCount++] = labelY;
+
+    lv_label_set_text(burnLineLabels[series], seriesName);
+    lv_obj_set_style_text_color(burnLineLabels[series], lv_color_hex(color), 0);
+    lv_obj_set_pos(burnLineLabels[series], chartRight - 60, labelY);
+    lv_obj_remove_flag(burnLineLabels[series], LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 void refreshUI() {
   int displayProviders[2] = {findProvider("claude-code"), findProvider("codex")};
   for (int slot = 0; slot < 2; ++slot) {
@@ -1038,74 +1076,7 @@ void refreshUI() {
     }
   }
 
-  const ProviderState *primary = providerCount ? &providers[0] : nullptr;
-  char hero[24] = "--%";
-  char resetCountdown[24] = "--";
-  char exhaustCountdown[24] = "--";
-  char detail[96] = "I'LL FORECAST RISK AS DATA ARRIVES.";
-  char status[96] = "USE NOTCHAGENT FOR A FEW MINUTES.";
-  char windowMetric[24] = "--";
-  char resetMetric[24] = "UNKNOWN";
-  char paceMetric[24] = "--";
-  const uint64_t nowEpochMs = estimatedEpochMs();
-  const bool hasGauge = primary && primary->remaining >= 0;
-  const bool hasBurn = hasGauge && primary->burn > 0.05f;
-  const bool hasReset = primary && primary->resetEpochMs > nowEpochMs;
-  const bool runsOut = hasBurn && hasReset && primary->exhaustEpochMs > nowEpochMs &&
-    primary->exhaustEpochMs < primary->resetEpochMs;
-  if (primary) lv_label_set_text(burnProvider, providerDisplayName(primary->id));
-  else lv_label_set_text(burnProvider, "NO PROVIDER");
-  if (hasGauge) {
-    snprintf(hero, sizeof(hero), "%.0f%%", primary->remaining);
-    formatCountdown(primary->resetEpochMs, resetCountdown, sizeof(resetCountdown));
-    formatCountdown(primary->exhaustEpochMs, exhaustCountdown, sizeof(exhaustCountdown));
-    strlcpy(windowMetric, !strcmp(primary->window, "weekly") ? "WEEKLY" : "5H SESSION", sizeof(windowMetric));
-    strlcpy(resetMetric, hasReset ? resetCountdown : "UNKNOWN", sizeof(resetMetric));
-    if (hasBurn) snprintf(paceMetric, sizeof(paceMetric), "+%.1f%%/H", primary->burn);
-    else strlcpy(paceMetric, "STABLE", sizeof(paceMetric));
-    if (!hasReset) {
-      lv_label_set_text(burnVerdict, "RESET TIME UNKNOWN");
-      snprintf(status, sizeof(status), "%s DID NOT REPORT A RESET TIME.", providerDisplayName(primary->id));
-      snprintf(detail, sizeof(detail), "%.0f%% LEFT. I'LL KEEP WATCHING YOUR PACE.", primary->remaining);
-    } else if (runsOut) {
-      lv_label_set_text(burnVerdict, "YES  /  SLOW DOWN");
-      snprintf(status, sizeof(status), "LIMIT ENDS IN %s. REDUCE USAGE.", exhaustCountdown);
-      strlcpy(detail, "PAUSE HEAVY TASKS UNTIL THE LIMIT RESETS.", sizeof(detail));
-    } else if (hasBurn) {
-      const float hoursToReset = (primary->resetEpochMs - nowEpochMs) / 3600000.0f;
-      const float projectedLeft = max(0.0f, primary->remaining - primary->burn * hoursToReset);
-      lv_label_set_text(burnVerdict, "NO  /  YOU'RE SAFE");
-      snprintf(status, sizeof(status), "AT THIS PACE, ~%.0f%% WILL REMAIN.", projectedLeft);
-      strlcpy(detail, "KEEP WORKING. I'LL WARN YOU IF RISK RISES.", sizeof(detail));
-    } else {
-      lv_label_set_text(burnVerdict, "NO  /  YOU'RE SAFE");
-      strlcpy(status, "NO ACTIVE BURN DETECTED.", sizeof(status));
-      strlcpy(detail, "KEEP WORKING. I'LL WARN YOU IF RISK APPEARS.", sizeof(detail));
-    }
-  } else {
-    lv_label_set_text(burnVerdict, "LEARNING YOUR PACE");
-  }
-  lv_label_set_text(burnHero, hero);
-  lv_label_set_text(burnDetail, detail);
-  lv_label_set_text(burnStatus, status);
-  lv_label_set_text(burnMetricValues[0], windowMetric);
-  lv_label_set_text(burnMetricValues[1], resetMetric);
-  lv_label_set_text(burnMetricValues[2], paceMetric);
-  const uint32_t burnTint = !hasGauge ? kMuted : !hasReset ? kWarning : runsOut ? kDanger : kOK;
-  const uint32_t runwayTint = hasGauge ? attentionColor(primary->attention) : kMuted;
-  lv_obj_set_style_text_color(burnHero, lv_color_hex(runwayTint), 0);
-  lv_obj_set_style_text_color(burnVerdict, lv_color_hex(burnTint), 0);
-  lv_obj_set_style_text_color(burnStatus, lv_color_hex(burnTint), 0);
-  lv_obj_set_style_border_color(burnVerdictPanel, lv_color_hex(burnTint), 0);
-  lv_obj_set_style_border_width(burnVerdictPanel, 2, 0);
-  lv_obj_set_style_text_color(burnMetricValues[0], lv_color_hex(kText), 0);
-  lv_obj_set_style_text_color(burnMetricValues[1], lv_color_hex(hasReset ? kText : kWarning), 0);
-  lv_obj_set_style_text_color(burnMetricValues[2], lv_color_hex(hasBurn ? kCoral : hasGauge ? kOK : kMuted), 0);
-  const int litRunway = hasGauge ? constrain(static_cast<int>(ceil(primary->remaining / 5.0f)), 0, 20) : 0;
-  for (int segment = 0; segment < 20; ++segment) {
-    lv_obj_set_style_bg_color(burnGauge[segment],
-      lv_color_hex(segment < litRunway ? runwayTint : kRaised), 0);
-  }
+  updateBurnLines();
 
   int64_t peak = 1;
   int peakHour = 0;

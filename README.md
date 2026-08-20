@@ -10,7 +10,7 @@
   <a href="https://img.shields.io/badge/version-v0.8.0-FF654F?style=flat-square"><img src="https://img.shields.io/badge/version-v0.8.0-FF654F?style=flat-square" alt="Version v0.8.0"></a>
   <a href="protocol/PROTOCOL.md"><img src="https://img.shields.io/badge/protocol-1.3-C9A7FF?style=flat-square" alt="Protocol 1.3"></a>
   <a href="https://luisroquette.github.io/notchagent-desk/"><img src="https://img.shields.io/badge/product-page-live-38D6C7?style=flat-square" alt="Product page"></a>
-  <a href="https://cfgauss.com.br/shop/notchagent-desk"><img src="https://img.shields.io/badge/buy-R%24_499%2C90-FF654F?style=flat-square" alt="Buy: R$ 499,90"></a>
+  <a href="https://cfgauss.com.br/shop/notchagent-desk"><img src="https://img.shields.io/badge/buy-R%24_699%2C90-FF654F?style=flat-square" alt="Buy: R$ 699,90"></a>
 </p>
 
 NotchAgent Desk is the physical companion for

@@ -12,7 +12,7 @@ that still require a supplier sample and owner approval.
 
 | Item | Requirement | Status |
 |---|---|---|
-| Display controller | Guition JC4832W535, ESP32-S3, 480x320 touch, AXS15231B | Verified on prototype |
+| Display controller | ESP32-S3 board, 7-inch 1024x600 capacitive touch (5-point) | Verified on prototype |
 | Flash / PSRAM | 16 MB flash, 8 MB OPI PSRAM | Verified by connected prototype |
 | Data link | Any USB data cable compatible with the board connector and the customer's Mac/dock | Verified function; commodity item, no fixed SKU |
 | Firmware | NotchAgent Desk factory image, protocol v1.1 | Build and recovery flow validated |

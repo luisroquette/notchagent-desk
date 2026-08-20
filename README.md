@@ -3,7 +3,7 @@
 **The fuel gauge for your AI quota — on your desk, not in a window.**
 
 <p align="center">
-  <img src="docs/assets/img/desk-live.gif" width="480" alt="NotchAgent Desk live: NOW, BURN, RHYTHM and MODELS pages showing Claude Code quota on the 3.5-inch display">
+  <img src="docs/assets/img/desk-live.gif" width="480" alt="NotchAgent Desk live: NOW, BURN, RHYTHM and MODELS pages showing Claude Code quota on the 7-inch display">
 </p>
 
 <p align="center">
@@ -14,8 +14,8 @@
 </p>
 
 NotchAgent Desk is the physical companion for
-[NotchAgent](https://github.com/luisroquette/notchagent): a handmade 3.5-inch
-IPS touch display that turns your local Claude Code and Codex quota data into
+[NotchAgent](https://github.com/luisroquette/notchagent): a handmade 7-inch
+capacitive touch display (1024x600) that turns your local Claude Code and Codex quota data into
 a touch-first instrument — **NOW · BURN · RHYTHM · MODELS** — powered by an
 ESP32-S3 over USB-C. No cloud account, no telemetry, no credentials. The host
 app calculates; the Desk only renders a bounded, sanitized snapshot.
@@ -83,7 +83,7 @@ NOW · BURN · RHYTHM · MODELS
   notarized host app; the 24-hour physical soak and customer pilot remain open.
 - **Windows 10/11 x64:** beta host path; protocol builds on Windows CI, physical
   USB/DPI/tray validation remains a release gate.
-- **Firmware:** `0.8.0` on Guition `JC4832W535` / ESP32-S3.
+- **Firmware:** `0.8.0` on the 7-inch 1024x600 capacitive touch board / ESP32-S3.
 - **Wire protocol:** `1.3`; major versions must match.
 
 See [`COMPATIBILITY.md`](COMPATIBILITY.md) before claiming a platform as supported.

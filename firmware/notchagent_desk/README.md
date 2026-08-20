@@ -1,7 +1,7 @@
 # NotchAgent Desk firmware
 
-USB-only companion firmware for the Guition JC4832W535 (ESP32-S3, 480x320,
-AXS15231B). The NotchAgent host remains the only source of usage data and
+USB-only companion firmware for the ESP32-S3 7-inch display board (1024x600,
+capacitive touch, 5-point). The NotchAgent host remains the only source of usage data and
 credentials: macOS and Windows Desk paths remain beta until their physical
 release gates pass. See [`../../COMPATIBILITY.md`](../../COMPATIBILITY.md).
 

@@ -27,6 +27,25 @@ constexpr uint32_t kModelOpus = 0x9085E9;
 constexpr uint32_t kModelFable = 0xD55181;
 constexpr uint64_t kResetBoundaryToleranceMs = 120000;
 constexpr int kPageCount = 4;
+// Burn-forecast chart plot area, in burnCard-local pixels. Shared by
+// updateBurnLines() (drawing) and burnScrubEvent() (touch readout) so the
+// two can never drift apart.
+constexpr int kBurnChartLeft = 14;
+constexpr int kBurnChartRight = 450;
+constexpr int kBurnChartTop = 40;
+constexpr int kBurnChartBottom = 208;
+// RHYTHM page's hourly-bar plot area, in pages[2]-local pixels. Shared by
+// the refresh loop (drawing) and rhythmScrubEvent() (touch readout).
+constexpr int kRhythmChartLeft = 5;
+constexpr int kRhythmBarPitch = 19;
+constexpr int kRhythmBarWidth = 11;
+constexpr int kRhythmChartBaseline = 195;
+constexpr int kRhythmChartMaxBarHeight = 88;
+// Below this, the current hour has barely started — extrapolating its
+// so-far total to a full hour would swing wildly. Same threshold and same
+// reasoning as RhythmChartView.currentHourGraceFraction on the macOS app,
+// so the two products agree on when "in progress" is worth showing.
+constexpr float kRhythmCurrentHourGraceFraction = 0.15f;
 
 struct ProviderState {
   char id[16] = "";
@@ -69,6 +88,8 @@ uint8_t alertThresholds[5] = {100, 75, 50, 25, 5};
 size_t alertThresholdCount = 5;
 bool runnerEnabled = true;
 int64_t rhythm[24] = {};
+int rhythmCurrentHour = -1;
+float rhythmCurrentHourElapsedFraction = 0;
 float burnAgeSeconds[48] = {};
 float burnUsedPercent[48] = {};
 size_t burnPointCount = 0;
@@ -112,7 +133,27 @@ lv_obj_t *burnLines[4] = {};
 lv_obj_t *burnLineLabels[4] = {};
 lv_obj_t *burnEmptyLabel = nullptr;
 lv_point_precise_t burnLinePoints[4][48];
+// Touch scrubber: crosshair + dot + labeled bubble, shown while a finger is
+// down on the burn chart and hidden again on release — the touch equivalent
+// of the macOS app's hover readout.
+lv_obj_t *burnScrubCrosshair = nullptr;
+lv_obj_t *burnScrubDot = nullptr;
+lv_obj_t *burnScrubBubble = nullptr;
+lv_obj_t *burnScrubLabel = nullptr;
+lv_point_precise_t burnScrubCrosshairPoints[2];
+// Touch scrubber for the RHYTHM page — same shape as the burn scrubber
+// above, applied to the hourly bars instead of the burn lines.
+lv_obj_t *rhythmScrubCrosshair = nullptr;
+lv_obj_t *rhythmScrubHighlight = nullptr;
+lv_obj_t *rhythmScrubBubble = nullptr;
+lv_obj_t *rhythmScrubLabel = nullptr;
+lv_point_precise_t rhythmScrubCrosshairPoints[2];
 lv_obj_t *rhythmBars[24] = {};
+// Outline-only cap stacked above the current hour's real bar: honest
+// stand-in for BurnChartView's dashed projection line (LVGL has no cheap
+// dashed-border primitive here) — the hollow portion reads as "not lived
+// yet," matching the real vs. projected split that page already uses.
+lv_obj_t *rhythmCurrentHourProjection = nullptr;
 lv_obj_t *rhythmMetricValues[3] = {};
 lv_obj_t *modelSummary = nullptr;
 lv_obj_t *modelRows[4] = {};
@@ -120,6 +161,22 @@ lv_obj_t *modelLabels[4] = {};
 lv_obj_t *modelTokenLabels[4] = {};
 lv_obj_t *modelStatusLabels[4] = {};
 lv_obj_t *modelGauge[4][10] = {};
+// One breathing Clawd mascot per model row, reusing the exact kClawd bitmap
+// the alert overlay already draws — same character, same source of truth,
+// not a second mascot invented for this page. Each modelMascot[i] is a
+// transparent container (mirrors gameMascot/gamePixels below) so animating
+// the breath is one lv_obj_set_y per row, not 48 individual pixel moves.
+lv_obj_t *modelMascot[4] = {};
+lv_obj_t *modelMascotPixels[4][6][8] = {};
+// 0-1 per row, refreshed in refreshUI() from real quota state; read every
+// animation tick by updateModelMascotAnimation() so the breath rate/depth
+// always tracks the live number, never a value baked in at creation time.
+float modelMascotDistress[4] = {};
+// False only when there's genuinely no shared-pool reading yet (provider
+// not found / not yet reported) — read by updateModelMascotAnimation() to
+// freeze the breath instead of animating a fabricated "calm" from a 0 that
+// was never actually measured.
+bool modelMascotKnown[4] = {};
 lv_obj_t *gameMascot = nullptr;
 lv_obj_t *gamePixels[5][8] = {};
 lv_obj_t *gameObstacles[4] = {};
@@ -186,6 +243,23 @@ uint32_t colorForModelShortName(const char *shortName) {
   if (!strcmp(shortName, "Opus")) return kModelOpus;
   if (!strcmp(shortName, "Fable")) return kModelFable;
   return kMuted;
+}
+
+// RGB-scale-toward-black by `scale` (1 = full color, 0 = black) — the same
+// operation as opacity-over-a-black-background, which is what the macOS
+// mascot actually does against its own black notch.
+uint32_t scaledColor(uint32_t base, float scale) {
+  const float clampedScale = constrain(scale, 0.0f, 1.0f);
+  const uint8_t r = static_cast<uint8_t>(((base >> 16) & 0xFF) * clampedScale);
+  const uint8_t g = static_cast<uint8_t>(((base >> 8) & 0xFF) * clampedScale);
+  const uint8_t b = static_cast<uint8_t>((base & 0xFF) * clampedScale);
+  return (static_cast<uint32_t>(r) << 16) | (static_cast<uint32_t>(g) << 8) | b;
+}
+
+// Reproduces the macOS mascot's `tint.opacity(1 - distress * 0.35)` exactly
+// (opacity-over-black and RGB-scale-toward-black are the same operation).
+uint32_t distressedColor(uint32_t base, float distress) {
+  return scaledColor(base, 1.0f - constrain(distress, 0.0f, 1.0f) * 0.35f);
 }
 
 lv_obj_t *surface(lv_obj_t *parent, int x, int y, int width, int height, int radius = 12) {
@@ -296,8 +370,11 @@ void navigatePage(int page) {
 
 void updatePageTransition() {
   if (transitionFromPage < 0) return;
-  const float progress = min(1.0f, (millis() - transitionStartedAt) / 180.0f);
-  const float eased = 1.0f - powf(1.0f - progress, 3.0f);
+  // 260ms and a quartic ease-out (was 180ms/cubic) — same shape as the
+  // macOS pager's slower, near-zero-bounce spring: a deliberate glide
+  // instead of a quick, slightly springy snap.
+  const float progress = min(1.0f, (millis() - transitionStartedAt) / 260.0f);
+  const float eased = 1.0f - powf(1.0f - progress, 4.0f);
   lv_obj_set_x(pages[transitionFromPage], 8 - transitionDirection * static_cast<int>(464 * eased));
   lv_obj_set_x(pages[transitionToPage], 8 + transitionDirection * static_cast<int>(464 * (1.0f - eased)));
   if (progress >= 1.0f) {
@@ -362,6 +439,173 @@ void dismissDeskAlert() {
 
 void alertTouchEvent(lv_event_t *) {
   dismissDeskAlert();
+}
+
+// Touch equivalent of the macOS app's BurnChartView hover scrubber: while a
+// finger is on the burn chart, shows which line (dominant model or a
+// what-if alternate) is closest to the touch point, and how far along that
+// model's projection is at that point in time — and keeps re-picking the
+// nearest line on every PRESSING tick, so dragging across the chart
+// re-targets whichever line the finger is actually over instead of
+// sticking to whatever line was closest at touch-down.
+void burnScrubEvent(lv_event_t *event) {
+  const lv_event_code_t code = lv_event_get_code(event);
+  if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+    lv_obj_add_flag(burnScrubCrosshair, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(burnScrubDot, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(burnScrubBubble, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+  if (!hasDominantModel || burnPointCount < 2) return;
+
+  lv_indev_t *indev = lv_indev_active();
+  if (!indev) return;
+  lv_point_t point;
+  lv_indev_get_point(indev, &point);
+  lv_area_t area;
+  lv_obj_get_coords(lv_event_get_target_obj(event), &area);
+  const int localX = point.x - area.x1;
+  const int localY = point.y - area.y1;
+  if (localX < kBurnChartLeft - 8 || localX > kBurnChartRight + 8 ||
+      localY < kBurnChartTop - 8 || localY > kBurnChartBottom + 8) {
+    return;
+  }
+
+  const float fraction = constrain(
+    static_cast<float>(localX - kBurnChartLeft) / (kBurnChartRight - kBurnChartLeft), 0.0f, 1.0f);
+  const float floatIndex = fraction * (burnPointCount - 1);
+  const size_t i0 = static_cast<size_t>(floatIndex);
+  const size_t i1 = min(i0 + 1, burnPointCount - 1);
+  const float indexFrac = floatIndex - i0;
+  const float basePercent = burnUsedPercent[i0] + (burnUsedPercent[i1] - burnUsedPercent[i0]) * indexFrac;
+  const float ageSeconds = burnAgeSeconds[i0] + (burnAgeSeconds[i1] - burnAgeSeconds[i0]) * indexFrac;
+
+  // Same "nearest line to the pointer" rule as the macOS app: interpolate
+  // every visible series (dominant + alternates) at this x, then pick
+  // whichever one's y is closest to the touch point instead of always
+  // reporting the dominant model regardless of where the finger lands.
+  const size_t seriesCount = 1 + burnAlternateCount;
+  size_t bestSeries = 0;
+  float bestDistance = 1e9f;
+  float bestPercent = 0;
+  for (size_t series = 0; series < seriesCount; ++series) {
+    const float ratio = series == 0 ? 1.0f : burnAlternates[series - 1].priceRatio;
+    const float scaledPercent = constrain(basePercent * ratio, 0.0f, 100.0f);
+    const float seriesY = kBurnChartTop + (kBurnChartBottom - kBurnChartTop) * (1.0f - scaledPercent / 100.0f);
+    const float distance = fabsf(seriesY - localY);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestSeries = series;
+      bestPercent = scaledPercent;
+    }
+  }
+
+  const char *seriesName = bestSeries == 0 ? dominantModelShortName : burnAlternates[bestSeries - 1].shortName;
+  const uint32_t color = bestSeries == 0 ? kCoral : colorForModelShortName(seriesName);
+  const int dotX = kBurnChartLeft + static_cast<int>(fraction * (kBurnChartRight - kBurnChartLeft));
+  const int dotY = static_cast<int>(
+    kBurnChartTop + (kBurnChartBottom - kBurnChartTop) * (1.0f - bestPercent / 100.0f));
+
+  burnScrubCrosshairPoints[0] = {static_cast<lv_value_precise_t>(dotX), static_cast<lv_value_precise_t>(kBurnChartTop)};
+  burnScrubCrosshairPoints[1] = {static_cast<lv_value_precise_t>(dotX), static_cast<lv_value_precise_t>(kBurnChartBottom)};
+  lv_line_set_points(burnScrubCrosshair, burnScrubCrosshairPoints, 2);
+  lv_obj_remove_flag(burnScrubCrosshair, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_set_pos(burnScrubDot, dotX - 4, dotY - 4);
+  lv_obj_set_style_bg_color(burnScrubDot, lv_color_hex(color), 0);
+  lv_obj_remove_flag(burnScrubDot, LV_OBJ_FLAG_HIDDEN);
+
+  char ageText[16];
+  if (ageSeconds < 60) snprintf(ageText, sizeof(ageText), "NOW");
+  else snprintf(ageText, sizeof(ageText), "%dM AGO", static_cast<int>(ageSeconds / 60));
+  char bubbleText[48];
+  snprintf(bubbleText, sizeof(bubbleText), "%s  %s  %d%%",
+    seriesName, ageText, static_cast<int>(bestPercent + 0.5f));
+  lv_label_set_text(burnScrubLabel, bubbleText);
+  lv_obj_set_style_text_color(burnScrubLabel, lv_color_hex(color), 0);
+
+  const int bubbleWidth = 150;
+  const int bubbleHeight = 22;
+  const int bubbleX = constrain(dotX - bubbleWidth / 2, kBurnChartLeft, kBurnChartRight - bubbleWidth);
+  int bubbleY = dotY - bubbleHeight - 12;
+  if (bubbleY < kBurnChartTop) bubbleY = min(dotY + 14, kBurnChartBottom - bubbleHeight);
+  lv_obj_set_pos(burnScrubBubble, bubbleX, bubbleY);
+  lv_obj_set_style_border_color(burnScrubBubble, lv_color_hex(color), 0);
+  lv_obj_remove_flag(burnScrubBubble, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Forward declaration: defined further down, but needed here because this
+// sketch's functions live inside an anonymous namespace, which the
+// arduino-cli ctags prototype pass doesn't reach into.
+void compactTokens(int64_t tokens, char *output, size_t capacity);
+
+// Touch scrubber for the RHYTHM page's hourly bars — same "closest thing to
+// the finger, re-picked on every PRESSING tick" contract as burnScrubEvent
+// above, applied to a bar chart instead of line series: outlines the
+// touched hour's bar and shows its exact token count.
+void rhythmScrubEvent(lv_event_t *event) {
+  const lv_event_code_t code = lv_event_get_code(event);
+  if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+    lv_obj_add_flag(rhythmScrubCrosshair, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(rhythmScrubHighlight, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(rhythmScrubBubble, LV_OBJ_FLAG_HIDDEN);
+    return;
+  }
+
+  int64_t total = 0;
+  int64_t peak = 1;
+  for (int i = 0; i < 24; ++i) {
+    total += rhythm[i];
+    peak = max(peak, rhythm[i]);
+  }
+  if (total <= 0) return;
+
+  lv_indev_t *indev = lv_indev_active();
+  if (!indev) return;
+  lv_point_t point;
+  lv_indev_get_point(indev, &point);
+  lv_area_t area;
+  lv_obj_get_coords(lv_event_get_target_obj(event), &area);
+  const int localX = point.x - area.x1;
+  const int localY = point.y - area.y1;
+  const int chartRight = kRhythmChartLeft + 24 * kRhythmBarPitch;
+  const int chartTop = kRhythmChartBaseline - kRhythmChartMaxBarHeight;
+  if (localX < kRhythmChartLeft - 8 || localX > chartRight + 8 ||
+      localY < chartTop - 8 || localY > kRhythmChartBaseline + 8) {
+    return;
+  }
+
+  const int hour = constrain((localX - kRhythmChartLeft) / kRhythmBarPitch, 0, 23);
+  const int barHeight = max(2, static_cast<int>(rhythm[hour] * kRhythmChartMaxBarHeight / peak));
+  const int barX = kRhythmChartLeft + hour * kRhythmBarPitch;
+  const int barY = kRhythmChartBaseline - barHeight;
+  const int lineX = barX + kRhythmBarWidth / 2;
+
+  rhythmScrubCrosshairPoints[0] = {
+    static_cast<lv_value_precise_t>(lineX), static_cast<lv_value_precise_t>(chartTop)};
+  rhythmScrubCrosshairPoints[1] = {
+    static_cast<lv_value_precise_t>(lineX), static_cast<lv_value_precise_t>(kRhythmChartBaseline)};
+  lv_line_set_points(rhythmScrubCrosshair, rhythmScrubCrosshairPoints, 2);
+  lv_obj_remove_flag(rhythmScrubCrosshair, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_set_pos(rhythmScrubHighlight, barX - 1, barY - 1);
+  lv_obj_set_size(rhythmScrubHighlight, kRhythmBarWidth + 2, barHeight + 2);
+  lv_obj_remove_flag(rhythmScrubHighlight, LV_OBJ_FLAG_HIDDEN);
+
+  char tokenText[24];
+  compactTokens(rhythm[hour], tokenText, sizeof(tokenText));
+  char bubbleText[48];
+  const bool inProgress = hour == rhythmCurrentHour && rhythmCurrentHourElapsedFraction < 1.0f;
+  snprintf(bubbleText, sizeof(bubbleText), "%02d:00  %s TOKENS%s",
+    hour, tokenText, inProgress ? " SO FAR" : "");
+  lv_label_set_text(rhythmScrubLabel, bubbleText);
+
+  const int bubbleWidth = 150;
+  const int bubbleHeight = 22;
+  const int bubbleX = constrain(lineX - bubbleWidth / 2, kRhythmChartLeft, chartRight - bubbleWidth);
+  const int bubbleY = max(barY - bubbleHeight - 8, chartTop - 4);
+  lv_obj_set_pos(rhythmScrubBubble, bubbleX, bubbleY);
+  lv_obj_remove_flag(rhythmScrubBubble, LV_OBJ_FLAG_HIDDEN);
 }
 
 void setGameSprite(const uint8_t grid[5][8], uint32_t tint) {
@@ -590,6 +834,30 @@ void createUI() {
   }
   burnEmptyLabel = label(burnCard, "NO MODEL DATA YET", &lv_font_montserrat_16, kMuted, 14, 96);
 
+  burnScrubCrosshair = lv_line_create(burnCard);
+  lv_obj_remove_flag(burnScrubCrosshair, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_line_width(burnScrubCrosshair, 1, 0);
+  lv_obj_set_style_line_color(burnScrubCrosshair, lv_color_hex(kMuted), 0);
+  lv_obj_add_flag(burnScrubCrosshair, LV_OBJ_FLAG_HIDDEN);
+
+  burnScrubDot = lv_obj_create(burnCard);
+  lv_obj_remove_flag(burnScrubDot, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_size(burnScrubDot, 8, 8);
+  lv_obj_set_style_radius(burnScrubDot, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_border_width(burnScrubDot, 0, 0);
+  lv_obj_add_flag(burnScrubDot, LV_OBJ_FLAG_HIDDEN);
+
+  burnScrubBubble = surface(burnCard, 0, 0, 150, 22, 6);
+  lv_obj_remove_flag(burnScrubBubble, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(burnScrubBubble, LV_OBJ_FLAG_HIDDEN);
+  burnScrubLabel = label(burnScrubBubble, "", &lv_font_montserrat_12, kText, 8, 4);
+  lv_obj_remove_flag(burnScrubLabel, LV_OBJ_FLAG_CLICKABLE);
+
+  lv_obj_add_event_cb(burnCard, burnScrubEvent, LV_EVENT_PRESSED, nullptr);
+  lv_obj_add_event_cb(burnCard, burnScrubEvent, LV_EVENT_PRESSING, nullptr);
+  lv_obj_add_event_cb(burnCard, burnScrubEvent, LV_EVENT_RELEASED, nullptr);
+  lv_obj_add_event_cb(burnCard, burnScrubEvent, LV_EVENT_PRESS_LOST, nullptr);
+
   lv_obj_t *rhythmTitle = label(pages[2], "RHYTHM  /  WHEN DO I WORK MOST?", &lv_font_montserrat_12, kCoral, 4, 5);
   styleTracking(rhythmTitle, 1);
   lv_obj_t *rhythmScope = label(pages[2], "WEEKLY PATTERN", &lv_font_montserrat_12, kMuted, 330, 5);
@@ -619,8 +887,9 @@ void createUI() {
   }
   for (int i = 0; i < 24; ++i) {
     rhythmBars[i] = lv_obj_create(pages[2]);
-    lv_obj_set_pos(rhythmBars[i], 5 + i * 19, 194);
-    lv_obj_set_size(rhythmBars[i], 11, 2);
+    lv_obj_remove_flag(rhythmBars[i], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_pos(rhythmBars[i], kRhythmChartLeft + i * kRhythmBarPitch, kRhythmChartBaseline - 1);
+    lv_obj_set_size(rhythmBars[i], kRhythmBarWidth, 2);
     lv_obj_set_style_bg_color(rhythmBars[i], lv_color_hex(kCoral), 0);
     lv_obj_set_style_border_width(rhythmBars[i], 0, 0);
     lv_obj_set_style_radius(rhythmBars[i], 2, 0);
@@ -631,6 +900,42 @@ void createUI() {
   label(pages[2], "18", &lv_font_montserrat_12, kMuted, 346, 204);
   label(pages[2], "23", &lv_font_montserrat_12, kMuted, 442, 204);
 
+  rhythmCurrentHourProjection = lv_obj_create(pages[2]);
+  lv_obj_remove_flag(rhythmCurrentHourProjection, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_bg_opa(rhythmCurrentHourProjection, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(rhythmCurrentHourProjection, 1, 0);
+  lv_obj_set_style_border_color(rhythmCurrentHourProjection, lv_color_hex(kCoral), 0);
+  lv_obj_set_style_border_opa(rhythmCurrentHourProjection, LV_OPA_60, 0);
+  lv_obj_set_style_radius(rhythmCurrentHourProjection, 2, 0);
+  lv_obj_set_style_pad_all(rhythmCurrentHourProjection, 0, 0);
+  lv_obj_add_flag(rhythmCurrentHourProjection, LV_OBJ_FLAG_HIDDEN);
+
+  rhythmScrubCrosshair = lv_line_create(pages[2]);
+  lv_obj_remove_flag(rhythmScrubCrosshair, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_line_width(rhythmScrubCrosshair, 1, 0);
+  lv_obj_set_style_line_color(rhythmScrubCrosshair, lv_color_hex(kMuted), 0);
+  lv_obj_add_flag(rhythmScrubCrosshair, LV_OBJ_FLAG_HIDDEN);
+
+  rhythmScrubHighlight = lv_obj_create(pages[2]);
+  lv_obj_remove_flag(rhythmScrubHighlight, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_style_bg_opa(rhythmScrubHighlight, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(rhythmScrubHighlight, 1, 0);
+  lv_obj_set_style_border_color(rhythmScrubHighlight, lv_color_hex(kText), 0);
+  lv_obj_set_style_radius(rhythmScrubHighlight, 2, 0);
+  lv_obj_set_style_pad_all(rhythmScrubHighlight, 0, 0);
+  lv_obj_add_flag(rhythmScrubHighlight, LV_OBJ_FLAG_HIDDEN);
+
+  rhythmScrubBubble = surface(pages[2], 0, 0, 150, 22, 6);
+  lv_obj_remove_flag(rhythmScrubBubble, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(rhythmScrubBubble, LV_OBJ_FLAG_HIDDEN);
+  rhythmScrubLabel = label(rhythmScrubBubble, "", &lv_font_montserrat_12, kText, 8, 4);
+  lv_obj_remove_flag(rhythmScrubLabel, LV_OBJ_FLAG_CLICKABLE);
+
+  lv_obj_add_event_cb(pages[2], rhythmScrubEvent, LV_EVENT_PRESSED, nullptr);
+  lv_obj_add_event_cb(pages[2], rhythmScrubEvent, LV_EVENT_PRESSING, nullptr);
+  lv_obj_add_event_cb(pages[2], rhythmScrubEvent, LV_EVENT_RELEASED, nullptr);
+  lv_obj_add_event_cb(pages[2], rhythmScrubEvent, LV_EVENT_PRESS_LOST, nullptr);
+
   lv_obj_t *modelsTitle = label(pages[3], "MODELS  /  WHO IS DOING THE WORK?", &lv_font_montserrat_12, kCoral, 4, 5);
   styleTracking(modelsTitle, 1);
   modelSummary = label(pages[3], "0 TRACKED", &lv_font_montserrat_12, kMuted, 284, 5);
@@ -638,9 +943,34 @@ void createUI() {
   lv_obj_set_style_text_align(modelSummary, LV_TEXT_ALIGN_RIGHT, 0);
   for (int i = 0; i < 4; ++i) {
     modelRows[i] = surface(pages[3], 0, 34 + i * 47, 464, 42, 8);
-    lv_obj_t *rank = label(modelRows[i], i == 0 ? "01" : i == 1 ? "02" : i == 2 ? "03" : "04",
-                           &lv_font_montserrat_12, kCoral, 10, 8);
-    styleTracking(rank, 1);
+    // Row order is already rank order (Mac sorts models.tokens descending
+    // before sending), so the "01"/"02" text this replaced was restating
+    // position — the mascot fills that same slot with something the old
+    // number couldn't say: how close to empty this model's pool is.
+    modelMascot[i] = lv_obj_create(modelRows[i]);
+    lv_obj_remove_flag(modelMascot[i], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_pos(modelMascot[i], 6, 9);
+    lv_obj_set_size(modelMascot[i], 31, 23);
+    lv_obj_set_style_bg_opa(modelMascot[i], LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(modelMascot[i], 0, 0);
+    lv_obj_set_style_pad_all(modelMascot[i], 0, 0);
+    lv_obj_remove_flag(modelMascot[i], LV_OBJ_FLAG_SCROLLABLE);
+    for (int row = 0; row < 6; ++row) {
+      for (int col = 0; col < 8; ++col) {
+        modelMascotPixels[i][row][col] = lv_obj_create(modelMascot[i]);
+        lv_obj_remove_flag(modelMascotPixels[i][row][col], LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_pos(modelMascotPixels[i][row][col], col * 4, row * 4);
+        lv_obj_set_size(modelMascotPixels[i][row][col], 3, 3);
+        lv_obj_set_style_border_width(modelMascotPixels[i][row][col], 0, 0);
+        // Rounded corners, not square — same soft-pixel-art convention as
+        // the macOS mascot (PixelGlyph.swift): reads as designed, not raw
+        // grid data. Eyes go fully circular there too (`Path(ellipseIn:)`);
+        // mirrored here with LV_RADIUS_CIRCLE on the 2 eye cells specifically.
+        lv_obj_set_style_radius(modelMascotPixels[i][row][col],
+          kClawd[row][col] == 2 ? LV_RADIUS_CIRCLE : 1, 0);
+        if (!kClawd[row][col]) lv_obj_add_flag(modelMascotPixels[i][row][col], LV_OBJ_FLAG_HIDDEN);
+      }
+    }
     modelLabels[i] = label(modelRows[i], "NO MODEL", &lv_font_montserrat_14, kMuted, 42, 5);
     lv_obj_set_width(modelLabels[i], 218);
     lv_label_set_long_mode(modelLabels[i], LV_LABEL_LONG_CLIP);
@@ -963,6 +1293,37 @@ void updateAlertAnimation() {
       lv_obj_set_x(alertMascotPixels[row][col], 28 + col * 10 + tremor);
 }
 
+// Breathing, one lv_obj_set_y per row (see the modelMascot[] comment at its
+// declaration) — calm and slow at rest, quick and shallow near empty, the
+// same physical metaphor and the same numbers as PixelGlyph.swift on the
+// Mac, so the two products' mascots move in the same language.
+// Real adult resting respiratory rate is clinically documented as
+// 12-20 breaths/min at rest, rising toward ~30/min at the rapid, visibly
+// out-of-breath end (tachypnea) — mapped directly to distress 0->1, same
+// two numbers as PixelGlyph.swift's calmBreathsPerSecond/
+// distressedBreathsPerSecond, so both products' mascots breathe at
+// identical, real rates instead of two independently hand-tuned curves.
+constexpr float kMascotCalmBreathsPerSecond = 12.0f / 60.0f;
+constexpr float kMascotDistressedBreathsPerSecond = 30.0f / 60.0f;
+
+void updateModelMascotAnimation() {
+  for (int i = 0; i < 4; ++i) {
+    if (lv_obj_has_flag(modelMascot[i], LV_OBJ_FLAG_HIDDEN)) continue;
+    if (!modelMascotKnown[i]) {
+      // Frozen, not breathing calmly — an unmeasured row must not look
+      // like a confidently resting one.
+      lv_obj_set_y(modelMascot[i], 9);
+      continue;
+    }
+    const float distress = modelMascotDistress[i];
+    const float breathsPerSecond = kMascotCalmBreathsPerSecond +
+      distress * (kMascotDistressedBreathsPerSecond - kMascotCalmBreathsPerSecond);
+    const float amplitudePixels = 1.2f - distress * 0.7f;
+    const float phase = sinf(millis() / 1000.0f * breathsPerSecond * 2.0f * PI);
+    lv_obj_set_y(modelMascot[i], 9 + static_cast<int>(phase * amplitudePixels));
+  }
+}
+
 void updateBurnLines() {
   const bool hasData = hasDominantModel && burnPointCount >= 2;
   lv_label_set_text(burnProvider, hasDominantModel ? dominantModelShortName : "--");
@@ -974,10 +1335,10 @@ void updateBurnLines() {
     lv_obj_remove_flag(burnEmptyLabel, LV_OBJ_FLAG_HIDDEN);
   }
 
-  const int chartLeft = 14;
-  const int chartRight = 450;
-  const int chartTop = 40;
-  const int chartBottom = 208;
+  const int chartLeft = kBurnChartLeft;
+  const int chartRight = kBurnChartRight;
+  const int chartTop = kBurnChartTop;
+  const int chartBottom = kBurnChartBottom;
   const int chartWidth = chartRight - chartLeft;
   const int chartHeight = chartBottom - chartTop;
   const size_t seriesCount = hasData ? 1 + burnAlternateCount : 0;
@@ -1107,11 +1468,33 @@ void refreshUI() {
   lv_obj_set_style_text_color(rhythmMetricValues[1], lv_color_hex(total > 0 ? kText : kMuted), 0);
   lv_obj_set_style_text_color(rhythmMetricValues[2], lv_color_hex(total > 0 ? kCoral : kMuted), 0);
   for (int i = 0; i < 24; ++i) {
-    const int height = max(2, static_cast<int>(rhythm[i] * 88 / peak));
-    lv_obj_set_y(rhythmBars[i], 195 - height);
+    const int height = max(2, static_cast<int>(rhythm[i] * kRhythmChartMaxBarHeight / peak));
+    lv_obj_set_y(rhythmBars[i], kRhythmChartBaseline - height);
     lv_obj_set_height(rhythmBars[i], height);
     lv_obj_set_style_bg_color(rhythmBars[i], lv_color_hex(
       total == 0 ? kRaised : i == peakHour ? kOK : kCoral), 0);
+  }
+
+  // Current hour's bar is real only up to "now" — the hollow cap above it
+  // is a naive linear extrapolation to a full hour, shown only once there's
+  // enough of the hour elapsed to not be pure noise (kRhythmCurrentHourGraceFraction).
+  const bool showCurrentHourProjection = rhythmCurrentHour >= 0 && rhythmCurrentHour < 24 &&
+    rhythm[rhythmCurrentHour] > 0 && rhythmCurrentHourElapsedFraction >= kRhythmCurrentHourGraceFraction;
+  if (showCurrentHourProjection) {
+    const int realHeight = max(2, static_cast<int>(rhythm[rhythmCurrentHour] * kRhythmChartMaxBarHeight / peak));
+    const int projectedHeight = min(kRhythmChartMaxBarHeight,
+      static_cast<int>(realHeight / rhythmCurrentHourElapsedFraction));
+    if (projectedHeight > realHeight + 1) {
+      lv_obj_set_pos(rhythmCurrentHourProjection,
+        kRhythmChartLeft + rhythmCurrentHour * kRhythmBarPitch,
+        kRhythmChartBaseline - projectedHeight);
+      lv_obj_set_size(rhythmCurrentHourProjection, kRhythmBarWidth, projectedHeight - realHeight);
+      lv_obj_remove_flag(rhythmCurrentHourProjection, LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(rhythmCurrentHourProjection, LV_OBJ_FLAG_HIDDEN);
+    }
+  } else {
+    lv_obj_add_flag(rhythmCurrentHourProjection, LV_OBJ_FLAG_HIDDEN);
   }
 
   int64_t totalModelTokens = 0;
@@ -1127,6 +1510,19 @@ void refreshUI() {
                            static_cast<unsigned>(modelCount), totalModelText);
   else strlcpy(modelSummaryText, "0 TRACKED  /  WAITING", sizeof(modelSummaryText));
   lv_label_set_text(modelSummary, modelSummaryText);
+  // Haiku/Sonnet/Opus share one pool (see the equivalent comment on the
+  // macOS app's distressLevel(health:quota:)) — the Desk protocol doesn't
+  // carry a separate per-model quota, so every row's mascot reflects this
+  // one real shared gauge instead of fabricating a per-model number.
+  const int claudeProviderIndex = findProvider("claude-code");
+  // -1 (ProviderState's own "not reported yet" sentinel) means genuinely no
+  // reading, not a measured 0% — kept as its own flag rather than folded
+  // into sharedDistress, so a not-yet-connected provider can't render as a
+  // confidently calm mascot below.
+  const bool claudeKnown = claudeProviderIndex >= 0 && providers[claudeProviderIndex].remaining >= 0;
+  const float claudeRemaining = claudeKnown ? providers[claudeProviderIndex].remaining : 0;
+  const float sharedDistress = claudeKnown
+    ? constrain((100.0f - claudeRemaining) / 100.0f, 0.0f, 1.0f) : 0.0f;
   for (int i = 0; i < 4; ++i) {
     char modelTokens[24] = "--";
     char modelStatus[32] = "NO DATA";
@@ -1154,6 +1550,50 @@ void refreshUI() {
     } else {
       lv_label_set_text(modelLabels[i], "NO MODEL");
       lv_obj_set_style_text_color(modelLabels[i], lv_color_hex(kMuted), 0);
+    }
+    if (i < static_cast<int>(modelCount)) {
+      // Mascot droop/breath = quota-closeness only. "limited" used to also
+      // floor distress here — reverted: once the shared pool alone is
+      // already past the ear-droop threshold, that floor is a no-op and
+      // every mascot (including OK ones) collapses to the same maxed-out
+      // look. Haiku/Sonnet/Opus share one real quota number, so their
+      // droop/breath legitimately DO match each other — that isn't a bug.
+      // What makes the 4 cards visually distinct is tint: the same colors
+      // modelStatusLabels[i] already uses for OK/LIMITED/ERROR (kOK/
+      // kWarning/kDanger-family), reused here instead of a new palette, so
+      // a LIMITED card still reads as different from an OK one even when
+      // both currently share the same quota-closeness number.
+      const bool isError = !strcmp(models[i].status, "error");
+      const bool isLimited = !strcmp(models[i].status, "limited");
+      const bool known = claudeKnown;
+      const float distress = sharedDistress;
+      modelMascotDistress[i] = distress;
+      modelMascotKnown[i] = known;
+      const bool dropEars = distress > 0.6f;
+      const uint32_t tint = isError ? kMuted : isLimited ? kWarning : kCoral;
+      // Unknown: fixed dim, same tint — visually distinct from a confident
+      // calm mascot and from a distressed one, never "0 disguised as
+      // measured." 0.55 has no other meaning than "clearly dimmer than
+      // resting" — see asleep in PixelGlyph.swift.
+      const uint32_t bodyColor = known ? distressedColor(tint, distress) : scaledColor(tint, 0.55f);
+      lv_obj_remove_flag(modelMascot[i], LV_OBJ_FLAG_HIDDEN);
+      for (int row = 0; row < 6; ++row) {
+        for (int col = 0; col < 8; ++col) {
+          if (!kClawd[row][col]) continue;
+          lv_obj_t *pixel = modelMascotPixels[i][row][col];
+          if (dropEars && row == 0 && kClawd[row][col] == 1) {
+            lv_obj_add_flag(pixel, LV_OBJ_FLAG_HIDDEN);
+            continue;
+          }
+          lv_obj_remove_flag(pixel, LV_OBJ_FLAG_HIDDEN);
+          lv_obj_set_style_bg_color(pixel,
+            lv_color_hex(kClawd[row][col] == 2 ? kPanel : bodyColor), 0);
+        }
+      }
+    } else {
+      modelMascotDistress[i] = 0;
+      modelMascotKnown[i] = false;
+      lv_obj_add_flag(modelMascot[i], LV_OBJ_FLAG_HIDDEN);
     }
     lv_label_set_text(modelTokenLabels[i], modelTokens);
     lv_label_set_text(modelStatusLabels[i], modelStatus);
@@ -1255,6 +1695,12 @@ bool parseSnapshot(const uint8_t *payload, size_t length) {
     const int hour = item["hour"] | -1;
     if (hour >= 0 && hour < 24) rhythm[hour] = max<int64_t>(0, item["tokens"].as<int64_t>());
   }
+  // -1 sentinel (rather than clamping to 0-23) so an old app build that
+  // predates these two fields reads as "no current-hour info" instead of
+  // silently mislabeling hour 0 as in-progress.
+  rhythmCurrentHour = document["currentHour"].is<int>() ? document["currentHour"].as<int>() : -1;
+  rhythmCurrentHourElapsedFraction = constrain(
+    document["currentHourElapsedFraction"] | 0.0f, 0.0f, 1.0f);
   for (JsonObject item : document["models"].as<JsonArray>()) {
     if (modelCount >= 8) break;
     ModelState &state = models[modelCount++];
@@ -1456,6 +1902,11 @@ void loop() {
   if (millis() - lastAlertFrame >= 100) {
     lastAlertFrame = millis();
     updateAlertAnimation();
+  }
+  static uint32_t lastModelMascotFrame = 0;
+  if (millis() - lastModelMascotFrame >= 100) {
+    lastModelMascotFrame = millis();
+    if (activePage == 3) updateModelMascotAnimation();
   }
   static uint32_t lastFreshness = 0;
   if (millis() - lastFreshness >= 1000) {

@@ -1,15 +1,62 @@
 # NotchAgent Desk
 
-**Your AI limits, always visible. No terminal. No tab switching.**
+**The fuel gauge for your AI quota — on your desk, not in a window.**
 
-NotchAgent Desk is the physical 3.5-inch companion for Claude Code and Codex.
-It turns local quota data from the [NotchAgent](https://github.com/luisroquette/notchagent)
-desktop app into a dedicated, touch-first instrument on your desk.
+<p align="center">
+  <img src="docs/assets/img/desk-live.gif" width="480" alt="NotchAgent Desk live: NOW, BURN, RHYTHM and MODELS pages showing Claude Code quota on the 3.5-inch display">
+</p>
 
-> This repository is the source of truth for the **hardware product**: ESP32-S3
-> firmware, USB protocol, compatibility contracts, factory documentation, and
-> host SDKs. The desktop application lives in the separate
-> [`luisroquette/notchagent`](https://github.com/luisroquette/notchagent) repository.
+<p align="center">
+  <a href="https://img.shields.io/badge/version-v0.8.0-FF654F?style=flat-square"><img src="https://img.shields.io/badge/version-v0.8.0-FF654F?style=flat-square" alt="Version v0.8.0"></a>
+  <a href="protocol/PROTOCOL.md"><img src="https://img.shields.io/badge/protocol-1.3-C9A7FF?style=flat-square" alt="Protocol 1.3"></a>
+  <a href="https://luisroquette.github.io/notchagent-desk/"><img src="https://img.shields.io/badge/product-page-live-38D6C7?style=flat-square" alt="Product page"></a>
+  <a href="https://cfgauss.com.br/shop/notchagent-desk"><img src="https://img.shields.io/badge/buy-R%24_499%2C90-FF654F?style=flat-square" alt="Buy: R$ 499,90"></a>
+</p>
+
+NotchAgent Desk is the physical companion for
+[NotchAgent](https://github.com/luisroquette/notchagent): a handmade 3.5-inch
+IPS touch display that turns your local Claude Code and Codex quota data into
+a touch-first instrument — **NOW · BURN · RHYTHM · MODELS** — powered by an
+ESP32-S3 over USB-C. No cloud account, no telemetry, no credentials. The host
+app calculates; the Desk only renders a bounded, sanitized snapshot.
+
+## Why it exists
+
+You only find out your quota is gone at the worst moment — in the middle of a
+build, discovered by an error.
+
+<p align="center">
+  <img src="docs/assets/img/game-over.gif" width="480" alt="8-bit animation: the Clawd mascot hits the quota limit and it's game over">
+</p>
+
+The Desk puts what's left in front of you the whole time, like a car's fuel
+gauge: glance, don't check.
+
+## What's on the display
+
+- **NOW** — the 5-hour session and weekly windows as percentage left,
+  aligned to the official reset, never wall-clock guesswork.
+- **BURN** — the dominant model's burn curve per hour, with what-if
+  projections for Haiku, Sonnet, Opus and Fable. Touch-scrub the chart to
+  read any point.
+- **RHYTHM** — your weekly pattern in 24 hourly bars. Touch a bar to see the
+  exact token count, with the in-progress hour projected honestly as
+  "so far".
+- **MODELS** — one row per model, each with a breathing Clawd mascot whose
+  rate tracks the real shared-pool quota. Unmeasured quota renders frozen —
+  never a fabricated calm.
+
+## Local-first by design
+
+- The device has no credentials, no cloud account, and no outbound traffic.
+- Snapshots are sanitized: no prompts, account IDs, file paths or money.
+- The calculation engine lives in the host app on your machine.
+- Firmware, protocol and factory contracts are open in this repository.
+
+## Watch it work
+
+Full videos — installation, every screen, the exploded view and the handmade
+assembly — on the product page: **[luisroquette.github.io/notchagent-desk](https://luisroquette.github.io/notchagent-desk/)**.
 
 ## Product boundary
 
@@ -30,10 +77,6 @@ NotchAgent Desk firmware 0.8.0
 NOW · BURN · RHYTHM · MODELS
 ```
 
-The display has no provider credentials, cloud account, independent polling,
-or product telemetry. The host app calculates; the Desk only renders a bounded,
-sanitized snapshot.
-
 ## Current compatibility
 
 - **macOS 14+ / Apple Silicon:** Beta 1 hardware path through a signed and
@@ -52,7 +95,7 @@ firmware/       Arduino + LVGL firmware
 protocol/       wire contract and compatibility rules
 sdk/apple/      Swift frame codec package
 sdk/dotnet/     .NET 8 frame codec package
-docs/           BOM, factory, onboarding and pilot gates
+docs/           product page, BOM, factory, onboarding and pilot gates
 tools/          release and contract checks
 ```
 

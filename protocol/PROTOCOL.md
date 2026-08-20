@@ -1,4 +1,4 @@
-# NotchAgent Desk USB protocol 1.2
+# NotchAgent Desk USB protocol 1.3
 
 ## Transport
 
@@ -27,6 +27,15 @@ and device telemetry `5`.
 The host sends a random nonce in `hello`. The device must return the same nonce,
 the exact product string `NotchAgent Desk`, firmware version, and protocol
 version. Major mismatches fail closed.
+
+## Snapshot additions by protocol version
+
+- **1.3** — snapshot payload adds optional `currentHour` (int) and
+  `currentHourElapsedFraction` (double, 0–1). A host on protocol 1.2 or older
+  does not send them; devices must read their absence as "no current-hour
+  information," never as hour 0 in progress.
+- **1.2** — snapshot payload adds `dominantModelShortName` and
+  `modelAlternates`.
 
 ## Privacy boundary
 

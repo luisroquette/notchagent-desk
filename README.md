@@ -24,8 +24,8 @@ desktop app into a dedicated, touch-first instrument on your desk.
 Claude Code / Codex local data
            ↓
 NotchAgent host app (Mac or Windows)
-           ↓  sanitized snapshot · USB CDC · protocol 1.2
-NotchAgent Desk firmware 0.7.0
+           ↓  sanitized snapshot · USB CDC · protocol 1.3
+NotchAgent Desk firmware 0.8.0
            ↓
 NOW · BURN · RHYTHM · MODELS
 ```
@@ -40,8 +40,8 @@ sanitized snapshot.
   notarized host app; the 24-hour physical soak and customer pilot remain open.
 - **Windows 10/11 x64:** beta host path; protocol builds on Windows CI, physical
   USB/DPI/tray validation remains a release gate.
-- **Firmware:** `0.7.0` on Guition `JC4832W535` / ESP32-S3.
-- **Wire protocol:** `1.2`; major versions must match.
+- **Firmware:** `0.8.0` on Guition `JC4832W535` / ESP32-S3.
+- **Wire protocol:** `1.3`; major versions must match.
 
 See [`COMPATIBILITY.md`](COMPATIBILITY.md) before claiming a platform as supported.
 

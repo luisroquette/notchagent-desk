@@ -7,4 +7,6 @@ firmware/release/
 *.user
 *.suo
 .superpowers/
+# Downloads/artefatos locais do produto (ver materiais/README.md) — nunca publicados
+materiais/
 

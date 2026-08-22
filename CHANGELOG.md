@@ -8,12 +8,13 @@ All notable changes to NotchAgent Desk are documented here. The format follows
 
 ### Note
 
-- No firmware change required for the host's 3.5.2 Codex quota-accuracy
-  fix (see `notchagent` CHANGELOG). Desk firmware is a display-only
-  renderer — it reads `usedPercent` from the JSON payload the host
-  computes and never derives quota state itself, so the fix applies
-  automatically to every paired display once the host app updates to
-  3.5.2. Wire protocol stays at 1.3, no field changes.
+- No firmware change required for the host's 3.5.2–3.5.4 Codex
+  quota-accuracy and false-alert fixes (see `notchagent` CHANGELOG).
+  Desk firmware is a display-only renderer — it reads `usedPercent`
+  and `attention` from the JSON payload the host computes and never
+  derives quota state itself, so every fix applies automatically to
+  every paired display once the host app updates to 3.5.4. Wire
+  protocol stays at 1.3, no field changes.
 
 ## [0.8.0] - 2026-08-20
 
